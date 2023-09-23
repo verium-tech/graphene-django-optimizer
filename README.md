@@ -1,3 +1,8 @@
+# Changes Made
+
+* Added support for Django-Filter https://github.com/carltongibson/django-filter
+
+
 # graphene-django-optimizer
 
 [![build status](https://img.shields.io/travis/tfoxy/graphene-django-optimizer.svg)](https://travis-ci.com/github/tfoxy/graphene-django-optimizer)

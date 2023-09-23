@@ -1,9 +1,11 @@
 import functools
+import inspect
 
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import ForeignKey, Prefetch
 from django.db.models.constants import LOOKUP_SEP
 from django.db.models.fields.reverse_related import ManyToOneRel
+from django_filters.filterset import BaseFilterSet
 from graphene import InputObjectType
 from graphene.types.generic import GenericScalar
 from graphene.types.resolver import default_resolver
@@ -18,6 +20,7 @@ from graphql.type.definition import (
     GraphQLInterfaceType,
     GraphQLUnionType,
 )
+from graphql.execution import get_argument_values
 
 from graphql.pyutils import Path
 
@@ -152,6 +155,7 @@ class QueryOptimizer(object):
                             hasattr(graphene_type, "cursor")
                             and hasattr(graphene_type, "node")
                         ):
+                            # edge node                        
                             relay_store = self._optimize_gql_selections(
                                 self._get_type(selection_field_def),
                                 selection,
@@ -162,6 +166,7 @@ class QueryOptimizer(object):
                             except ImportError:
                                 store.abort_only_optimization()
                         else:
+                            # connection or field                            
                             model = getattr(graphene_type._meta, "model", None)
                             if model and name not in optimized_fields_by_model:
                                 field_model = optimized_fields_by_model[name] = model
@@ -175,6 +180,20 @@ class QueryOptimizer(object):
                                     )
         return store
 
+    def get_filterset_class(self, resolve):
+        if isinstance(resolve, functools.partial):
+            for arg in resolve.args:
+                if filterset := self.get_filterset_class(arg):
+                    return filterset
+            for _, arg in resolve.keywords.items():
+                if filterset := self.get_filterset_class(arg):
+                    return filterset
+        elif inspect.isclass(resolve) and issubclass(resolve, BaseFilterSet):
+            return resolve
+
+        return None
+
+
     def _optimize_field(self, store, model, selection, field_def, parent_type):
         optimized_by_name = self._optimize_field_by_name(
             store, model, selection, field_def
@@ -185,6 +204,7 @@ class QueryOptimizer(object):
         optimized = optimized_by_name or optimized_by_hints
         if not optimized:
             store.abort_only_optimization()
+
 
     def _optimize_field_by_name(self, store, model, selection, field_def):
         name = self._get_name_from_resolver(field_def.resolve)
@@ -214,7 +234,22 @@ class QueryOptimizer(object):
             if isinstance(model_field, ManyToOneRel):
                 field_store.only(model_field.field.name)
 
-            related_queryset = model_field.related_model.objects.all()
+            related_queryset = None
+            if filterset_class := self.get_filterset_class(field_def.resolve):
+                filter_kwargs = get_argument_values(
+                    field_def,
+                    node=selection,
+                    variable_values=self.root_info.variable_values
+                )
+                filterset = filterset_class(
+                    data=filter_kwargs, queryset=model_field.related_model.objects, request=self.root_info.context
+                )
+                if filterset.is_valid():
+                    related_queryset = filterset.qs
+
+            if related_queryset is None:
+                related_queryset = model_field.related_model.objects.all()
+
             store.prefetch_related(name, field_store, related_queryset)
             return True
         if not model_field.is_relation:
