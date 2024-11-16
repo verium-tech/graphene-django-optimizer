@@ -1,6 +1,6 @@
 import graphql
 from graphql import GraphQLSchema, GraphQLObjectType, FieldNode
-from graphql.execution.execute import get_field_def
+from graphql.utilities.type_info import get_field_def
 
 noop = lambda *args, **kwargs: None
 

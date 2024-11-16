@@ -38,7 +38,6 @@ def query(queryset, info, **options):
             - disable_abort_only (boolean) - in case the objecttype contains any extra fields,
                                              then this will keep the "only" optimization enabled.
     """
-
     return QueryOptimizer(info, **options).optimize(queryset)
 
 
@@ -155,7 +154,7 @@ class QueryOptimizer(object):
                             hasattr(graphene_type, "cursor")
                             and hasattr(graphene_type, "node")
                         ):
-                            # edge node                        
+                            # edge node
                             relay_store = self._optimize_gql_selections(
                                 self._get_type(selection_field_def),
                                 selection,
@@ -166,7 +165,7 @@ class QueryOptimizer(object):
                             except ImportError:
                                 store.abort_only_optimization()
                         else:
-                            # connection or field                            
+                            # connection or field
                             model = getattr(graphene_type._meta, "model", None)
                             if model and name not in optimized_fields_by_model:
                                 field_model = optimized_fields_by_model[name] = model
@@ -436,8 +435,10 @@ class QueryOptimizerStore:
             queryset = queryset.prefetch_related(*self.prefetch_list)
 
         if self.only_list:
-            queryset = queryset.only(*self.only_list)
-
+            merged_only_list = self.only_list
+            merged_only_list.extend(self.select_list)
+            merged_only_list.extend(self.prefetch_list)
+            queryset = queryset.only(*merged_only_list)
         return queryset
 
     def append(self, store):
